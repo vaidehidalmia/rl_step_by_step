@@ -42,7 +42,7 @@ def move(s, a):
         new_col = col
     return rc_to_i(new_row, new_col)
 
-def build_P():
+def build_P(slip = 0.0):
     """Build the transition model: P[s][a] = [(prob, next_state, reward, done), ...].
  
     Terminal states self-loop with reward 0; otherwise the agent could leave
@@ -56,11 +56,18 @@ def build_P():
                 P[s][a] = [(1.0, s, 0.0, True)]
             continue
  
+        
         for a in range(len(ACTIONS)):
-            next_state = move(s, a)
-            reward = TERMINAL_REWARDS.get(next_state, 0.0)
-            done = next_state in TERMINAL_REWARDS
-            P[s][a] = [(1.0, next_state, reward, done)]
+            side1, side2 = perpendicular(a)
+            outcomes = [(a, 1 - slip), (side1, slip/2), (side2, slip/2)]
+            P[s][a] = []
+            for action, prob in outcomes:
+                if prob == 0:
+                    continue
+                next_state = move(s, action)
+                reward = TERMINAL_REWARDS.get(next_state, 0.0)
+                done = next_state in TERMINAL_REWARDS
+                P[s][a].append((prob, next_state, reward, done))
  
     return P
 
@@ -74,4 +81,8 @@ def destination(policy, s, max_steps=50):
             return TERMINAL_LABELS[s]
         s = move(s, policy[s])
     return None
- 
+
+def perpendicular(a):
+    """Return the two actions at 90 degrees to action a."""
+    len_actions = len(ACTIONS)
+    return ((a - 1 + len_actions) % len_actions, (a + 1) % len_actions)

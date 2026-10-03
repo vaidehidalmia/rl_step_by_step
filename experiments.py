@@ -9,6 +9,7 @@ from env import N, TERMINAL_LABELS, build_P, destination
 from dp import value_iteration, greedy_policy, policy_iteration
 from viz import print_policy, plot_value_and_policy
 
+SLIP = 0.2
 
 def show_policy_iteration(P, gamma=0.9):
     """Print the policy at each round of policy iteration."""
@@ -30,7 +31,7 @@ def compare_two_gammas(P, gammas=(0.9, 0.5)):
     plt.show()
 
 
-def run_gamma_sweep(P, gammas=(0.4, 0.5, 0.6, 0.65, 0.7, 0.71, 0.73, 0.9)):
+def run_gamma_sweep(P, gammas=(0.5, 0.6, 0.65, 0.7, 0.71, 0.73, 0.9, 0.99)):
     """Plot the policy for each gamma and report which cells end up at S."""
     fig, axes = plt.subplots(2, 4, figsize=(22, 10))
     for gamma, ax in zip(gammas, axes.flat):
@@ -47,7 +48,7 @@ def run_gamma_sweep(P, gammas=(0.4, 0.5, 0.6, 0.65, 0.7, 0.71, 0.73, 0.9)):
 
 
 if __name__ == "__main__":
-    P = build_P()
+    P = build_P(SLIP)
     show_policy_iteration(P)
     compare_two_gammas(P)
     run_gamma_sweep(P)

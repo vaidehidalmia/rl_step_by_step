@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from env import N, TERMINAL_REWARDS, TERMINAL_LABELS, rc_to_i, i_to_rc, move, build_P, destination
+from env import N, TERMINAL_REWARDS, TERMINAL_LABELS, rc_to_i, i_to_rc, move, build_P, destination, perpendicular
 from dp import q_values, value_iteration, greedy_policy, policy_evaluation, policy_iteration
 
 
@@ -133,3 +133,22 @@ def test_S_territory(P, gamma, expected_cells):
     s_cells = [s for s in range(N * N)
                if s not in TERMINAL_LABELS and destination(pi, s) == "S"]
     assert s_cells == expected_cells
+
+def test_perpendicular():
+    assert set(perpendicular(0)) == {1, 3}
+    assert set(perpendicular(3)) == {0, 2}
+
+def test_build_P_slip_from_A():
+    P = build_P(slip=0.2)
+    assert sorted(P[20][1]) == sorted([
+        (0.8, 21, 1.0, True),    # intended: right, into S
+        (0.1, 15, 0.0, False),   # slip up
+        (0.1, 20, 0.0, False),   # slip down: wall, stay
+    ])
+
+
+def test_slip_probabilities_sum_to_one():
+    P = build_P(slip=0.2)
+    for s in range(len(P)):
+        for a in range(len(P[s])):
+            assert np.isclose(sum(prob for prob, *_ in P[s][a]), 1.0)
