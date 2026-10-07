@@ -2,10 +2,11 @@
 
 import numpy as np
 import pytest
+from collections import defaultdict
 
-from env import N, TERMINAL_REWARDS, TERMINAL_LABELS, rc_to_i, i_to_rc, move, build_P, destination, perpendicular
+from env import N, TERMINAL_REWARDS, TERMINAL_LABELS, ACTIONS, rc_to_i, i_to_rc, move, build_P, destination, perpendicular
 from dp import q_values, value_iteration, greedy_policy, policy_evaluation, policy_iteration
-
+from model_learning import NON_TERMINAL_STATES, step, reset, collect_experience, build_P_hat
 
 @pytest.fixture
 def P():
@@ -152,3 +153,100 @@ def test_slip_probabilities_sum_to_one():
     for s in range(len(P)):
         for a in range(len(P[s])):
             assert np.isclose(sum(prob for prob, *_ in P[s][a]), 1.0)
+
+def test_model_learning_step():
+    P = build_P(slip=0.2)
+    rng = np.random.default_rng(0)
+    results = [step(P, 20, 1, rng)[0] for _ in range(10_000)]
+    frac21 = results.count(21) / len(results)
+    frac15 = results.count(15) / len(results)
+    frac20 = results.count(20) / len(results)
+    assert abs(frac21 - 0.8) < 0.02
+    assert abs(frac15 - 0.1) < 0.02
+    assert abs(frac20 - 0.1) < 0.02
+
+def test_model_learning_step_deterministic():
+    P = build_P()
+    rng = np.random.default_rng(0)
+    for _ in range(100):
+        assert step(P, 20, 1, rng) == (21, 1.0, True)
+
+def test_reset():
+    rng = np.random.default_rng(0)
+    starts = [reset(rng) for _ in range(2000)]
+    assert not any(s in TERMINAL_REWARDS for s in starts)
+    assert len(set(starts)) == N * N - len(TERMINAL_REWARDS)
+
+def test_collected_transitions_are_possible():
+    P = build_P(slip=0.2)
+    rng = np.random.default_rng(0)
+    data = collect_experience(P, 200, rng)
+    for s, a, next_state, reward, done in data:
+        possible = [(ns, r, d) for _, ns, r, d in P[s][a]]
+        assert (next_state, reward, done) in possible
+
+
+def test_every_state_gets_visited():
+    P = build_P(slip=0.2)
+    rng = np.random.default_rng(0)
+    data = collect_experience(P, 200, rng)
+    visited = {s for s, *_ in data}
+    assert visited == set(NON_TERMINAL_STATES)
+
+
+def to_dist(entries):
+    """Merge a list of (prob, next_state, reward, done) into {outcome: total prob}."""
+    dist = defaultdict(float)
+    for prob, next_state, reward, done in entries:
+        dist[(next_state, reward, done)] += prob
+    return dist
+
+
+def test_P_hat_hand_built():
+    data = [
+        (20, 1, 21, 1.0, True),
+        (20, 1, 21, 1.0, True),
+        (20, 1, 15, 0.0, False),
+    ]
+    P_hat = build_P_hat(data, N * N, len(ACTIONS))
+    assert sorted(P_hat[20][1]) == sorted([
+        (2 / 3, 21, 1.0, True),
+        (1 / 3, 15, 0.0, False),
+    ])
+
+
+def test_P_hat_fallback_for_untried_pairs():
+    data = [(20, 1, 21, 1.0, True)]
+    P_hat = build_P_hat(data, N * N, len(ACTIONS))
+    assert P_hat[0][0] == [(1.0, 0, 0.0, False)]     # never tried: do-nothing
+    assert P_hat[20][0] == [(1.0, 20, 0.0, False)]   # tried state, untried action
+
+
+def test_P_hat_probabilities_sum_to_one():
+    P = build_P(slip=0.2)
+    rng = np.random.default_rng(0)
+    P_hat = build_P_hat(collect_experience(P, 200, rng), N * N, len(ACTIONS))
+    for s in range(N * N):
+        for a in range(len(ACTIONS)):
+            assert np.isclose(sum(prob for prob, *_ in P_hat[s][a]), 1.0)
+
+
+def test_P_hat_exact_in_deterministic_world():
+    P = build_P()
+    rng = np.random.default_rng(0)
+    data = collect_experience(P, 500, rng)
+    P_hat = build_P_hat(data, N * N, len(ACTIONS))
+    tried = {(s, a) for s, a, *_ in data}
+    for s, a in tried:
+        assert P_hat[s][a] == P[s][a]
+
+
+def test_P_hat_close_in_slippery_world():
+    P = build_P(slip=0.2)
+    rng = np.random.default_rng(0)
+    P_hat = build_P_hat(collect_experience(P, 5000, rng), N * N, len(ACTIONS))
+    for s in NON_TERMINAL_STATES:
+        for a in range(len(ACTIONS)):
+            true, est = to_dist(P[s][a]), to_dist(P_hat[s][a])
+            for outcome in set(true) | set(est):
+                assert abs(true.get(outcome, 0) - est.get(outcome, 0)) < 0.06
